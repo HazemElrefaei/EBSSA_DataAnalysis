@@ -1,12 +1,8 @@
 import os
-import logging
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.animation as animation
-import math
-import sys
 import numpy as np
-import pandas as pd
 import cv2
 import h5py
 from tqdm import tqdm
@@ -206,6 +202,13 @@ for h5_file_name in h5_file_list:
     sensor_height = int(events[:,1].max() + 1)
     
 
+    for i, s1 in enumerate(tqdm(S1, desc="Processing S1 Frames", unit="frame")):
+        cv2.putText(s1, f"Frame: {i+1}", (10, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.imshow("S1", s1)
+        cv2.waitKey(1)
+    cv2.destroyAllWindows()
+    
     ts0 = events[0, 3]
     ts1 = events[-1, 3]
     print(f"Time span: {(ts1 - ts0)} seconds")
@@ -238,8 +241,8 @@ for h5_file_name in h5_file_list:
     
 
         pos = detections[i]
-        
-        cx, cy = int(pos[1]*sensor_width), int(pos[2]*sensor_height)
+
+        cx, cy = int(pos[0]*sensor_width), int(pos[1]*sensor_height)
 
         # Define square ROI
         x1, x2 = max(cx - roi_size, 0), min(cx + roi_size, sensor_width)
