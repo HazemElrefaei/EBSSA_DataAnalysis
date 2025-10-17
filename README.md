@@ -80,6 +80,17 @@ your_project/
 
 ## 📦 Requirements
 
+# Data Analysis and Visualization Dependencies
+matplotlib>=3.5.0
+numpy>=1.21.0
+opencv-python>=4.5.0
+h5py>=3.6.0
+tqdm>=4.62.0
+plotly>=5.0.0
+ 
+# Additional visualization dependencies
+kaleido>=0.2.1
+
 Install the dependencies using `pip`:
 
 ```bash
