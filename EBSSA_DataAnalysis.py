@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.animation as animation
@@ -33,7 +34,7 @@ phi= 0.98
 start_time = 9
 end_time = 14
 
-save_images = False
+save_images = True
 save_animation = True
 
 
@@ -175,11 +176,11 @@ else:
     _ = os.system('clear')
     
     
-output_dir = r'/Add_Output_Path//'
-path_to_h5 = r'/Add_path_to_h5_file'
+output_dir = Path('Output')
+path_to_h5 = Path('/home/hussain/EBSSA_DataAnalysis')
 
 h5_file_list = [
-     'file_name',    #do not add the extension (.h5)
+     'DVX_Filtered_Thuraya3_32404_2025-01-20-20-02-43',    #do not add the extension (.h5)
 ]
 
 
@@ -188,12 +189,12 @@ h5_file_list = [
 #####################
 file_index = 0
 for h5_file_name in h5_file_list:
-    os.makedirs(output_dir+h5_file_name, exist_ok=True)
-    os.makedirs(output_dir+h5_file_name+"\\Events\\", exist_ok=True)
-    os.makedirs(output_dir+h5_file_name+"\\CMOS\\", exist_ok=True)
+    (output_dir / h5_file_name).mkdir(parents=True, exist_ok=True)
+    (output_dir / h5_file_name / "Events").mkdir(exist_ok=True)
+    (output_dir / h5_file_name / "CMOS").mkdir(exist_ok=True)
     print(f"Processing file: {h5_file_name}.h5")
     
-    with h5py.File(path_to_h5 + h5_file_name + '.h5', 'r') as f:
+    with h5py.File(path_to_h5 / f"{h5_file_name}.h5", 'r') as f:
         events = f['events'][:]
         S1 = f['s1'][:]
         detections = f['detections'][:]
@@ -202,12 +203,17 @@ for h5_file_name in h5_file_list:
     sensor_height = int(events[:,1].max() + 1)
     
 
-    for i, s1 in enumerate(tqdm(S1, desc="Processing S1 Frames", unit="frame")):
-        cv2.putText(s1, f"Frame: {i+1}", (10, 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.imshow("S1", s1)
-        cv2.waitKey(1)
-    cv2.destroyAllWindows()
+    # for i, s1 in enumerate(tqdm(S1, desc="Processing S1 Frames", unit="frame")):
+    #     cv2.putText(s1, f"Frame: {i+1}", (10, 20),
+    #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    #     cv2.imshow("S1", s1)
+    #     cv2.waitKey(1)
+    # cv2.destroyAllWindows()
+    
+    
+    detection_time = detections[:,4].copy()
+    detection_time = (detection_time - events[0,3]) * 1e-6
+    events[:, 3] = (events[:, 3] - events[0, 3])*1e-6  # Normalize timestamps to start at 0
     
     ts0 = events[0, 3]
     ts1 = events[-1, 3]
@@ -225,7 +231,7 @@ for h5_file_name in h5_file_list:
             y=counts,
             xlabel='Time (s)',
             ylabel='Event Count',
-            output_path= output_dir+h5_file_name + '\\' + h5_file_name + "_EventCounts.png"
+            output_path=str(output_dir / h5_file_name / f"{h5_file_name}_EventCounts.png")
         )
     print(f"Event count plot saved.")
     
@@ -233,37 +239,48 @@ for h5_file_name in h5_file_list:
     ## Event-based SNR using Position
     #################################
     
-    SNR_EVENTS = np.full(len(counts), np.nan, dtype=object)
-    S1 = S1[1:] 
-    for i, s1 in enumerate(S1):
-        
-        _, s1_threshold = cv2.threshold(s1, phi, 1, cv2.THRESH_BINARY)
+    SNR_EVENTS = np.full(len(counts)+1, np.nan, dtype=object)
+    detection_idx = 0
     
+    for i, s1 in enumerate(tqdm(S1, desc="Processing S1 Frames", unit="frame")):
+        pos_data = []
+        _, s1_threshold = cv2.threshold(s1, phi, 1, cv2.THRESH_BINARY)
 
-        pos = detections[i]
+        if detection_idx < len(detection_time):
+            while breaks[i] >= detection_time[detection_idx]:
+                pos_data.append(detections[detection_idx])
+                detection_idx += 1
+                if detection_idx >= len(detection_time):
+                    break
 
-        cx, cy = int(pos[0]*sensor_width), int(pos[1]*sensor_height)
-
-        # Define square ROI
-        x1, x2 = max(cx - roi_size, 0), min(cx + roi_size, sensor_width)
-        y1, y2 = max(cy - roi_size, 0), min(cy + roi_size, sensor_height)
-        
         s1_rec = s1.copy()
-        # Draw red rectangle (in-place)
-        s1_rec[y1:y2, x1:x1+2] = 1  # left
-        s1_rec[y1:y2, x2-2:x2] = 1  # right
-        s1_rec[y1:y1+2, x1:x2] = 1  # top
-        s1_rec[y2-2:y2, x1:x2] = 1  # bottom
-
-        # # Save using matplotlib
-        if save_images:
-            plt.imsave(output_dir+h5_file_name+"\\Events\\" + h5_file_name + f"_CMOS_Frame_{i}.png", s1_rec, cmap='gray', format='png')
-        
-        roi = s1_threshold[y1:y2, x1:x2]
-        signal = np.sum(roi)/roi.size
-        # noise = counts[i] - signal
         mask = np.ones_like(s1_threshold, dtype=bool)
-        mask[y1:y2, x1:x2] = False
+        roi = []
+        if pos_data:
+            for pos in pos_data:
+                cx, cy = int(pos[0]*sensor_width), int(pos[1]*sensor_height)
+
+                # Define square ROI
+                x1, x2 = max(cx - roi_size, 0), min(cx + roi_size, sensor_width)
+                y1, y2 = max(cy - roi_size, 0), min(cy + roi_size, sensor_height)
+                
+                # Draw red rectangle (in-place)
+                s1_rec[y1:y2, x1:x1+2] = 1  # left
+                s1_rec[y1:y2, x2-2:x2] = 1  # right
+                s1_rec[y1:y1+2, x1:x2] = 1  # top
+                s1_rec[y2-2:y2, x1:x2] = 1  # bottom
+                
+                mask[y1:y2, x1:x2] = False
+
+        
+                roi.append(s1_threshold[y1:y2, x1:x2])
+        
+        roi = np.array(roi)
+        if roi.size == 0:
+            continue
+        signal = np.sum(roi)/roi.size
+        
+        
         background = s1_threshold[mask]
         noise = np.std(background)
         
@@ -272,8 +289,13 @@ for h5_file_name in h5_file_list:
             snr_linear = signal / (noise * np.sqrt(roi.size))
             SNR_EVENTS[i] = 20 * np.log10(snr_linear)
         
+        cv2.imshow("S1", s1_rec)
+        cv2.waitKey(1)
+        # # Save using matplotlib
+        if save_images:
+            plt.imsave(str(output_dir / h5_file_name / "Events" / f"{h5_file_name}_Event_Frame_{i}.png"), s1_rec, cmap='gray', format='png')
         
-    
+    cv2.destroyAllWindows()
         
     print(f"Event-based Mean SNR: {np.nanmean(SNR_EVENTS):.3f}")
 
@@ -283,7 +305,7 @@ for h5_file_name in h5_file_list:
             y=SNR_EVENTS,
             xlabel='Time (s)',
             ylabel='SNR (dB)',
-            output_path=output_dir+h5_file_name + '\\' + h5_file_name + "_SNR_Events.png",
+            output_path=str(output_dir / h5_file_name / f"{h5_file_name}_SNR_Events.png"),
             show_markers=True
         )
 
@@ -299,10 +321,9 @@ for h5_file_name in h5_file_list:
     if save_animation:
         create_animation(
             frames=S1,
-            output_path=output_dir + h5_file_name + '\\' + h5_file_name + "_Event_Animation.gif",
+            output_path=str(output_dir / h5_file_name / f"{h5_file_name}_Event_Animation.gif"),
             is_events=True,
             start_time=start_time,
             end_time=end_time,
             window_size=window_size
         )
-
