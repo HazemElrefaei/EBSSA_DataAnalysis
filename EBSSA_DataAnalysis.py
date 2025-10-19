@@ -176,11 +176,11 @@ else:
     _ = os.system('clear')
     
     
-output_dir = Path('Output')
-path_to_h5 = Path('/home/hussain/EBSSA_DataAnalysis')
+output_dir = Path('add_your_output_directory_here')  # Use Path object for cross-platform compatibility
+path_to_h5 = Path('add_your_path_to_h5_files_here')
 
 h5_file_list = [
-     'DVX_Filtered_Thuraya3_32404_2025-01-20-20-02-43',    #do not add the extension (.h5)
+     'file_name',    #do not add the extension (.h5)
 ]
 
 
@@ -327,3 +327,4 @@ for h5_file_name in h5_file_list:
             end_time=end_time,
             window_size=window_size
         )
+
