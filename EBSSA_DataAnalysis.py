@@ -27,14 +27,14 @@ if hasattr(pio.kaleido, 'scope') and hasattr(pio.kaleido.scope, '_context'):
 window_size = 0.04  # 40 ms
 window_size_frames = 0.3  # 300 ms
 tau = 0.4 
-roi_size = 5        # half-width of signal ROI in pixels
+roi_size = 8        # half-width of signal ROI in pixels
 phi= 0.98 
 
 start_time = 9
 end_time = 14
 
 save_images = True
-save_animation = True
+save_animation = False
 
 
 def save_plotly_plot(x, y, label1='line1',x2=None, y2=None,label2='line2', xlabel='', ylabel='', output_path='', show_markers=False):
@@ -175,11 +175,29 @@ else:
     _ = os.system('clear')
     
     
-output_dir = r'add_your_output_directory_here\\'  # Make sure to end with double backslash
-path_to_h5 = r'add_your_path_to_h5_files_here\\'
+output_dir = r'add_path_to_output_directory\\' 
+path_to_h5 = r'add_path_to_h5_files\\'
 
 h5_file_list = [
-     'file_name',    #do not add the extension (.h5)
+    # 'DAVIS_COSMOS1933_18958_2024-12-04-18-37-01',
+    # 'DAVIS_EGS_16908_2024-11-01-19-10-44',
+    # 'DAVIS_Filtered_NOAA6_11416_2025-01-13-19-51-06',
+    # 'DAVIS_RESURSDK1_29228_2024-12-04-18-37-01',
+    # 'DAVIS_SAOCOM1B_46265_2024-12-04-18-21-37',
+    # 'DAVIS_SL8RB_2025-01-13-19-15-36',
+    # 'DAVIS_SL12RB2_15772_2024-12-04-18-21-37',
+    # 'DAVIS_SL16RB_20625_2024-12-04-19-34-18',
+    # 'DAVIS_SL16RB_26070_2024-12-04-19-14-39',
+    # 'DVX_Filtered_Thuraya3_32404_2025-01-20-20-02-43',
+    # 'DVX_Filtered_ACS3_59588_2025-01-20-19-35-44',
+    # 'DVX_Filtered_BlockDM_SLRB_32405_2025-01-20-19-57-17',
+    # 'DVX_Filtered_NOAA6_11416_2025-01-20-19-11-35',
+    # 'DVX_Filtered_NOAA15_25338_2025-01-20-19-25-07',
+    # 'DVX_Filtered_NOAA16_26536_2025-01-20-19-46-50',
+    # 'DVX_Filtered_Stars2_2025-01-20-19-57-17',
+    # 'DVX_Filtered_Stars3_2025-01-20-20-22-53',
+    # 'DVX_Filtered_Stars_2025-01-20-19-15-10',
+    # 'DVX_NOAA6_11416_2025-01-20-19-06-31',
 ]
 
 
@@ -190,6 +208,7 @@ file_index = 0
 for h5_file_name in h5_file_list:
     os.makedirs(output_dir+h5_file_name, exist_ok=True)
     os.makedirs(output_dir+h5_file_name+"\\Events\\", exist_ok=True)
+    os.makedirs(output_dir+h5_file_name+"\\RawEvents\\", exist_ok=True)
     os.makedirs(output_dir+h5_file_name+"\\CMOS\\", exist_ok=True)
     print(f"Processing file: {h5_file_name}.h5")
     
@@ -260,14 +279,16 @@ for h5_file_name in h5_file_list:
                 cx, cy = int(pos[0]*sensor_width), int(pos[1]*sensor_height)
 
                 # Define square ROI
-                x1, x2 = max(cx - roi_size, 0), min(cx + roi_size, sensor_width)
-                y1, y2 = max(cy - roi_size, 0), min(cy + roi_size, sensor_height)
+                x1 = max(0, min(cx - roi_size, sensor_width  - 2*roi_size))
+                y1 = max(0, min(cy - roi_size, sensor_height - 2*roi_size))
+                x2 = x1 + 2*roi_size
+                y2 = y1 + 2*roi_size
                 
                 # Draw red rectangle (in-place)
                 s1_rec[y1:y2, x1:x1+2] = 1  # left
-                s1_rec[y1:y2, x2-2:x2] = 1  # right
+                s1_rec[y1:y2, max(x2-2, x1):x2] = 1  # right
                 s1_rec[y1:y1+2, x1:x2] = 1  # top
-                s1_rec[y2-2:y2, x1:x2] = 1  # bottom
+                s1_rec[max(y2-2, y1):y2, x1:x2] = 1  # bottom
                 
                 mask[y1:y2, x1:x2] = False
 
@@ -309,6 +330,41 @@ for h5_file_name in h5_file_list:
         )
 
     print(f"Event-based SNR plot saved.")
+    
+    #####################
+    # Save Raw Events
+    #####################
+    # Create event frame visualization
+    event_frame_colored = np.zeros((sensor_height, sensor_width, 3), dtype=np.uint8)
+    event_frame_gray = np.zeros((sensor_height, sensor_width), dtype=np.float32)
+    event_frame_ON = np.zeros((sensor_height, sensor_width), dtype=np.float32)
+    event_frame_OFF = np.zeros((sensor_height, sensor_width), dtype=np.float32)
+    idx = 1
+    for i, event in enumerate(tqdm(events, desc="Processing Events", unit="event")):
+        x, y, p, t = event
+        x, y = int(x), int(y)
+        if p > 0:
+            event_frame_colored[y, x] = (255,0,0)  # ON event
+            event_frame_gray[y, x] = 1.0
+            event_frame_ON[y, x] = 1.0
+        else:
+            event_frame_colored[y, x] = (0,0,255)  # OFF event
+            event_frame_gray[y, x] = 1.0
+            event_frame_OFF[y, x] = 1.0
+        if idx < len(breaks):
+            if t >= breaks[idx]: 
+                if save_images:
+                    plt.imsave(output_dir+h5_file_name + '\\RawEvents\\' + h5_file_name + f"_RawEventsColored_{idx}.png", event_frame_colored, format='png')
+                    plt.imsave(output_dir+h5_file_name + '\\RawEvents\\' + h5_file_name + f"_RawEventsGray_{idx}.png", event_frame_gray, cmap='gray', format='png')
+                    plt.imsave(output_dir+h5_file_name + '\\RawEvents\\' + h5_file_name + f"_RawEventsON_{idx}.png", event_frame_ON, cmap='gray', format='png')
+                    plt.imsave(output_dir+h5_file_name + '\\RawEvents\\' + h5_file_name + f"_RawEventsOFF_{idx}.png", event_frame_OFF, cmap='gray', format='png')
+                event_frame_colored = np.zeros((sensor_height, sensor_width, 3), dtype=np.uint8)
+                event_frame_gray = np.zeros((sensor_height, sensor_width), dtype=np.float32)
+                event_frame_ON = np.zeros((sensor_height, sensor_width), dtype=np.float32)
+                event_frame_OFF = np.zeros((sensor_height, sensor_width), dtype=np.float32)
+                idx += 1
+
+    print(f"Raw events images saved.")
   
     #####################
     # Save Frames
